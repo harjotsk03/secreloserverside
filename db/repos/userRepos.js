@@ -41,4 +41,18 @@ async function getUserBySecure(type, value) {
   return result.rows[0];
 }
 
-module.exports = { createUsersTable, insertUser, getUserBy, getUserBySecure };
+
+async function getAllUsers() {
+  const result = await pool.query(
+    `SELECT id, full_name, email, created_at, updated_at, last_login, is_active FROM users`
+  );
+  return result.rows;
+}
+
+module.exports = {
+  createUsersTable,
+  insertUser,
+  getUserBy,
+  getUserBySecure,
+  getAllUsers,
+};

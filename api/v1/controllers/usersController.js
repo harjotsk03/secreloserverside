@@ -31,4 +31,14 @@ async function loginController(req, res) {
   }
 }
 
-module.exports = { createUserController, loginController };
+async function getUsersController(req, res) {
+  try {
+    const data = await userService.getAllUsers();
+    res.json(data);
+  } catch (err) {
+    console.error("Login error:", err);
+    res.status(401).json({ error: "Invalid email or password" });
+  }
+}
+
+module.exports = { createUserController, loginController, getUsersController };

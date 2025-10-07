@@ -91,5 +91,11 @@ async function loginUser({ email, password }) {
   return { user: userClean, token };
 }
 
+async function getAllUsers() {
+  const users = await userRepo.getAllUsers();
+  if (!users) throw new Error("No users!");
 
-module.exports = { createUser, loginUser };
+  return { users };
+}
+
+module.exports = { createUser, loginUser, getAllUsers };
