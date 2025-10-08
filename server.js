@@ -1,9 +1,11 @@
 require("dotenv").config();
 const express = require("express");
+const cors = require("cors");
 const bodyParser = require("body-parser");
 const userRoutes = require("./api/v1/routes/users");
 const { createUser } = require("./api/v1/services/userService");
 
+app.use(cors());
 const app = express();
 app.use(bodyParser.json());
 app.use("/secreloapis/v1/users", userRoutes);
