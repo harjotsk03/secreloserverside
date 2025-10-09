@@ -23,8 +23,11 @@ async function loginController(req, res) {
     return res.status(400).json({ error: "Missing credentials" });
 
   try {
-    const { user, token } = await userService.loginUser({ email, password });
-    res.json({ user, token });
+    const { user, accessToken, refreshToken } = await userService.loginUser({
+      email,
+      password,
+    });
+    res.json({ user, accessToken, refreshToken });
   } catch (err) {
     console.error("Login error:", err);
     res.status(401).json({ error: "Invalid email or password" });

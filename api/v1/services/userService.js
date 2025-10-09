@@ -9,13 +9,17 @@ function toB64(buf) {
   return buf.toString("base64");
 }
 
-function generateToken(user) {
-  const payload = { id: user.id, email: user.email };
-  const secret = process.env.JWT_SECRET;
-  const expiresIn = process.env.JWT_EXPIRES_IN || "7d";
-  return jwt.sign(payload, secret, { expiresIn });
+function generateAccessToken(user) {
+  const payload = { id: user.id, email: user.email, full_name: user.full_name };
+  return jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: "15m" });
 }
 
+function generateRefreshToken(user) {
+  const payload = { id: user.id };
+  return jwt.sign(payload, process.env.REFRESH_TOKEN_SECRET, {
+    expiresIn: "7d",
+  });
+}
 async function createUser({ full_name, email, password }) {
   const existing = await userRepo.getUserBy("email", email);
   if (existing) throw { code: "23505" };
@@ -72,9 +76,10 @@ async function createUser({ full_name, email, password }) {
     kdf_mem: sodium.crypto_pwhash_MEMLIMIT_MODERATE,
   });
 
-  // === GENERATE JWT ===
-  const token = generateToken(user);
-  return { user, token };
+  const accessToken = generateAccessToken(user);
+  const refreshToken = generateRefreshToken(user);
+
+  return { user, accessToken, refreshToken };
 }
 
 async function loginUser({ email, password }) {
@@ -84,11 +89,12 @@ async function loginUser({ email, password }) {
   const isValid = await bcrypt.compare(password, user.password_hash);
   if (!isValid) throw new Error("Invalid email or password");
 
-  const token = generateToken(user);
+  const accessToken = generateAccessToken(user);
+  const refreshToken = generateRefreshToken(user);
 
   const { password_hash, ...userClean } = user;
 
-  return { user: userClean, token };
+  return { user: userClean, accessToken, refreshToken };
 }
 
 async function getAllUsers() {

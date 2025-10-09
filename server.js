@@ -9,6 +9,7 @@ const { createUser } = require("./api/v1/services/userService");
 const app = express();
 app.use(cors());
 app.use(bodyParser.json());
+app.use(express.json());
 app.use("/secreloapis/v1/users", userRoutes);
 app.use("/secreloapis/v1/repos", repoRoutes);
 
