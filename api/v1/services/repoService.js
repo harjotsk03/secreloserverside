@@ -1,7 +1,4 @@
 const pool = require("../../../db/index");
-const { insertRepo } = require("../../../db/repos/repoRepos");
-const { insertRepoMember } = require("../../../db/repos/repoMembersRepos");
-const { insertFolder } = require("../../../db/repos/foldersRepo");
 
 async function createRepoWithDefaults({
   name,
@@ -31,15 +28,6 @@ async function createRepoWithDefaults({
       [repo.id, user_id, member_role]
     );
     const member = memberResult.rows[0];
-
-    // 3. Create default "General" folder
-    const folderResult = await client.query(
-      `INSERT INTO folders (repo, created_by, updated_by, name, description)
-       VALUES ($1, $2, $2, 'General', 'Default folder for this repository')
-       RETURNING *`,
-      [repo.id, user_id]
-    );
-    const folder = folderResult.rows[0];
 
     await client.query("COMMIT");
 
@@ -99,16 +87,6 @@ async function getRepoDetails(repoId) {
     throw new Error("Repo not found");
   }
 
-  // 2. Fetch folders for this repo
-  const foldersQuery = `
-    SELECT *
-    FROM folders
-    WHERE repo = $1
-  `;
-  const foldersResult = await pool.query(foldersQuery, [repoId]);
-  const folders = foldersResult.rows;
-
-  // 3. Fetch members for this repo
   const membersQuery = `
   SELECT
     rm.*,
@@ -124,9 +102,208 @@ WHERE rm.repo = $1
   // Return 3 separate JSON objects
   return {
     repo,
-    folders,
     members,
   };
 }
 
-module.exports = { createRepoWithDefaults, getUserRepos, getRepoDetails };
+async function getRepoDetailsJoin(repoId) {
+  const repoQuery = `
+  SELECT
+    r.id,
+    r.name,
+    r.description,
+    r.type,
+    (
+      SELECT COUNT(*)
+      FROM repo_members rm
+      WHERE rm.repo = r.id
+    ) AS member_count
+  FROM repos r
+  WHERE r.id = $1
+`;
+  const repoResult = await pool.query(repoQuery, [repoId]);
+  const repo = repoResult.rows[0];
+
+  if (!repo) {
+    throw new Error("Repo not found");
+  }
+
+  return {
+    repo,
+  };
+}
+
+async function createRepoInvite({
+  repo_id,
+  user_id,
+  user_name,
+  member_role,
+  member_permissions,
+  status,
+  expires_at,
+}) {
+  console.log(
+    repo_id,
+    user_id,
+    user_name,
+    member_role,
+    member_permissions,
+    status,
+    expires_at
+  );
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const repoResult = await client.query(
+      `INSERT INTO repo_invites (repo_id, invitee_id, invitee_name, member_role, member_permissions, status, expires_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING id`,
+      [
+        repo_id,
+        user_id,
+        user_name,
+        member_role,
+        member_permissions,
+        status,
+        expires_at,
+      ]
+    );
+
+    await client.query("COMMIT");
+
+    const repoInviteID = repoResult.rows[0];
+    return { repoInviteID };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("Error creating repo invite:", err);
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+async function getUserRepoInvites(userId, repoId) {
+  const query = `
+    SELECT
+      ri.*,
+      r.name AS repo_name,
+      r.description AS repo_description,
+      r.type AS repo_type,
+      (
+        SELECT COUNT(*)
+        FROM repo_members rm
+        WHERE rm.repo = r.id
+      ) AS member_count
+    FROM repo_invites ri
+    INNER JOIN repos r ON r.id = ri.repo_id
+    WHERE ri.invitee_id = $1
+      AND ri.repo_id = $2
+    ORDER BY ri.created_at DESC;
+  `;
+
+  const result = await pool.query(query, [userId, repoId]);
+  return result.rows;
+}
+
+async function getRepoInviteDetails(userId, repoInviteId) {
+  const query = `
+    SELECT
+      ri.*,
+      r.name AS repo_name,
+      r.description AS repo_description,
+      r.type AS repo_type,
+      (
+        SELECT COUNT(*)
+        FROM repo_members rm
+        WHERE rm.repo = r.id
+      ) AS member_count,
+      (
+        SELECT EXISTS (
+          SELECT 1
+          FROM repo_members rm2
+          WHERE rm2.repo = r.id AND rm2.user_id = $1
+        )
+      ) AS user_is_member
+    FROM repo_invites ri
+    INNER JOIN repos r ON r.id = ri.repo_id
+    WHERE ri.id = $2
+    LIMIT 1;
+  `;
+
+  const result = await pool.query(query, [userId, repoInviteId]);
+  return result.rows[0];
+}
+
+async function joinRepo(userId, repoInviteId, member_role) {
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    // 1️⃣ Fetch the invite and repo info
+    const inviteRes = await client.query(
+      `SELECT * FROM repo_invites WHERE id = $1`,
+      [repoInviteId]
+    );
+    const invite = inviteRes.rows[0];
+    if (!invite) throw new Error("Invite not found");
+
+    // Check expiration
+    // if (invite.expires_at && new Date(invite.expires_at) < new Date()) {
+    //   throw new Error("Invite expired");
+    // }
+
+    // 2️⃣ Check if already a member
+    const existingMemberRes = await client.query(
+      `SELECT * FROM repo_members WHERE repo = $1 AND user_id = $2`,
+      [invite.repo_id, userId]
+    );
+    if (existingMemberRes.rows.length > 0) {
+      throw new Error("User is already a member of this repo");
+    }
+
+    // 3️⃣ Add to repo_members
+    const memberRes = await client.query(
+      `
+      INSERT INTO repo_members (repo, user_id, member_role, member_permissions, status)
+      VALUES ($1, $2, $3, $4, 'active')
+      RETURNING *;
+      `,
+      [invite.repo_id, userId, member_role, invite.member_permissions || "read"]
+    );
+    const member = memberRes.rows[0];
+
+    // 4️⃣ Mark invite as accepted
+    await client.query(
+      `UPDATE repo_invites SET status = 'accepted' WHERE id = $1`,
+      [repoInviteId]
+    );
+
+    await client.query("COMMIT");
+
+    return {
+      success: true,
+      message: "Joined repo successfully",
+      member,
+    };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    console.error("❌ Error joining repo:", error);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+module.exports = {
+  createRepoWithDefaults,
+  getUserRepos,
+  getRepoDetails,
+  getRepoDetailsJoin,
+  createRepoInvite,
+  getUserRepoInvites,
+  getRepoInviteDetails,
+  joinRepo,
+};

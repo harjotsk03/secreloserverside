@@ -41,6 +41,13 @@ async function getUserBySecure(type, value) {
   return result.rows[0];
 }
 
+async function getUserKeyData(userId) {
+  const result = await pool.query(
+    `SELECT * FROM user_keys WHERE user_id = $1`,
+    [userId]
+  );
+  return result.rows[0];
+}
 
 async function getAllUsers() {
   const result = await pool.query(
@@ -55,4 +62,5 @@ module.exports = {
   getUserBy,
   getUserBySecure,
   getAllUsers,
+  getUserKeyData,
 };

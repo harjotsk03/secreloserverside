@@ -92,10 +92,26 @@ async function loginUser({ email, password }) {
   const accessToken = generateAccessToken(user);
   const refreshToken = generateRefreshToken(user);
 
+  let encryption = null;
+  if (user.id) {
+    const userKeyData = await userRepo.getUserKeyData(user.id);
+    if (userKeyData) {
+      encryption = {
+        public_key: userKeyData.public_key,
+        encrypted_private_key: userKeyData.encrypted_private_key,
+        private_key_salt: userKeyData.private_key_salt,
+        private_key_nonce: userKeyData.private_key_nonce,
+        kdf_ops: userKeyData.kdf_ops,
+        kdf_mem: userKeyData.kdf_mem,
+      };
+    }
+  }
+
   const { password_hash, ...userClean } = user;
 
-  return { user: userClean, accessToken, refreshToken };
+  return { user: userClean, accessToken, refreshToken, encryption };
 }
+
 
 async function getAllUsers() {
   const users = await userRepo.getAllUsers();
