@@ -297,6 +297,46 @@ async function joinRepo(userId, repoInviteId, member_role) {
   }
 }
 
+async function getRepoUserKeys(repoId) {
+  const query = `
+    SELECT 
+      rm.user_id, 
+      uk.public_key
+    FROM repo_members rm
+    INNER JOIN user_keys uk ON uk.user_id = rm.user_id
+    WHERE rm.repo = $1
+      AND rm.status = 'active';
+  `;
+
+  const result = await pool.query(query, [repoId]);
+  return result.rows;
+}
+
+async function getRepoSecrets(repoId) {
+  const query = `
+    SELECT 
+      s.id,
+      s.name,
+      s.description,
+      s.encrypted_secret,
+      s.nonce,
+      s.type,
+      s.version,
+      s.repo_id,
+      s.created_at,
+      cu.full_name AS created_by_name,
+      s.updated_at,
+      uu.full_name AS updated_by_name
+    FROM secrets s
+    LEFT JOIN users cu ON s.created_by = cu.id
+    LEFT JOIN users uu ON s.updated_by = uu.id
+    WHERE s.repo_id = $1;
+  `;
+
+  const result = await pool.query(query, [repoId]);
+  return result.rows;
+}
+
 module.exports = {
   createRepoWithDefaults,
   getUserRepos,
@@ -306,4 +346,6 @@ module.exports = {
   getUserRepoInvites,
   getRepoInviteDetails,
   joinRepo,
+  getRepoUserKeys,
+  getRepoSecrets,
 };

@@ -7,6 +7,8 @@ const {
   getUserRepoInvites,
   getRepoInviteDetails,
   joinRepo,
+  getRepoUserKeys,
+  getRepoSecrets,
 } = require("../services/repoService");
 
 async function createRepo(req, res) {
@@ -181,6 +183,58 @@ async function joinRepoController(req, res) {
   }
 }
 
+async function fetchRepoUserKeys(req, res) {
+  try {
+    const repoId = req.params.id;
+
+    if (!repoId) {
+      return res
+        .status(400)
+        .json({ success: false, error: "Missing repo ID." });
+    }
+
+    const userKeys = await getRepoUserKeys(repoId);
+
+    res.json({
+      success: true,
+      count: userKeys.length,
+      data: userKeys,
+    });
+  } catch (err) {
+    console.error("❌ Error fetching repo user keys:", err);
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch user public keys.",
+    });
+  }
+}
+
+async function fetchRepoSecrets(req, res) {
+  try {
+    const repoId = req.params.id;
+
+    if (!repoId) {
+      return res
+        .status(400)
+        .json({ success: false, error: "Missing repo ID." });
+    }
+
+    const repoSecrets = await getRepoSecrets(repoId);
+
+    res.json({
+      success: true,
+      count: repoSecrets.length,
+      data: repoSecrets,
+    });
+  } catch (err) {
+    console.error("❌ Error fetching repo secrets:", err);
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch repo secrets.",
+    });
+  }
+}
+
 module.exports = {
   createRepo,
   fetchUserRepos,
@@ -190,4 +244,6 @@ module.exports = {
   fetchUserRepoInvites,
   fetchRepoInvite,
   joinRepoController,
+  fetchRepoUserKeys,
+  fetchRepoSecrets,
 };
