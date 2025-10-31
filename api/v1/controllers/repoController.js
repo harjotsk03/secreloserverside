@@ -212,6 +212,7 @@ async function fetchRepoUserKeys(req, res) {
 async function fetchRepoSecrets(req, res) {
   try {
     const repoId = req.params.id;
+    const userId = req.user?.id;
 
     if (!repoId) {
       return res
@@ -219,7 +220,7 @@ async function fetchRepoSecrets(req, res) {
         .json({ success: false, error: "Missing repo ID." });
     }
 
-    const repoSecrets = await getRepoSecrets(repoId);
+    const repoSecrets = await getRepoSecrets(repoId, userId);
 
     res.json({
       success: true,

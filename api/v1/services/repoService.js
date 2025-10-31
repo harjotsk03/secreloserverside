@@ -312,30 +312,38 @@ async function getRepoUserKeys(repoId) {
   return result.rows;
 }
 
-async function getRepoSecrets(repoId) {
+async function getRepoSecrets(repoId, userId) {
   const query = `
     SELECT 
       s.id,
       s.name,
       s.description,
       s.encrypted_secret,
-      s.nonce,
+      s.nonce AS secret_nonce,
       s.type,
       s.version,
       s.repo_id,
       s.created_at,
       cu.full_name AS created_by_name,
       s.updated_at,
-      uu.full_name AS updated_by_name
+      uu.full_name AS updated_by_name,
+      us.encrypted_secret_key,
+      us.nonce AS user_nonce,
+      us.sender_public_key
     FROM secrets s
     LEFT JOIN users cu ON s.created_by = cu.id
     LEFT JOIN users uu ON s.updated_by = uu.id
-    WHERE s.repo_id = $1;
+    LEFT JOIN user_secrets us 
+      ON us.secret_id = s.id
+      AND us.user_id = $2
+    WHERE s.repo_id = $1
+    ORDER BY s.created_at DESC;
   `;
 
-  const result = await pool.query(query, [repoId]);
+  const result = await pool.query(query, [repoId, userId]);
   return result.rows;
 }
+
 
 module.exports = {
   createRepoWithDefaults,

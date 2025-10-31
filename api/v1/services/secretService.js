@@ -62,4 +62,41 @@ async function deleteSecret({ secret_id }) {
   }
 }
 
-module.exports = { createSecret, deleteSecret };
+async function createUserSecret({
+  secret_id,
+  user_id,
+  encrypted_secret_key,
+  nonce,
+  sender_public_key,
+}) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const result = await client.query(
+      `
+      INSERT INTO user_secrets (
+        secret_id,
+        user_id,
+        encrypted_secret_key,
+        nonce,
+        sender_public_key
+      )
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING *;
+      `,
+      [secret_id, user_id, encrypted_secret_key, nonce, sender_public_key]
+    );
+
+    await client.query("COMMIT");
+    return result.rows[0];
+  } catch (error) {
+    await client.query("ROLLBACK");
+    console.error("❌ Error creating user_secret:", error);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+module.exports = { createSecret, deleteSecret, createUserSecret };
