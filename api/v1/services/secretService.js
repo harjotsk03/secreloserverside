@@ -99,4 +99,35 @@ async function createUserSecret({
   }
 }
 
-module.exports = { createSecret, deleteSecret, createUserSecret };
+async function deleteUserSecret({ secret_id, user_id }) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const result = await client.query(
+      `
+      DELETE FROM user_secrets
+      WHERE user_id = $1
+        AND secret_id = $2
+      RETURNING *;
+      `,
+      [user_id, secret_id]
+    );
+
+    await client.query("COMMIT");
+    return result.rows[0];
+  } catch (error) {
+    await client.query("ROLLBACK");
+    console.error("❌ Error deleting user_secret:", error);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+module.exports = {
+  createSecret,
+  deleteSecret,
+  createUserSecret,
+  deleteUserSecret,
+};

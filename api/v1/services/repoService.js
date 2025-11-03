@@ -386,17 +386,18 @@ async function updateRepoMemberStatus({
       );
     }
 
-    const role = permissionCheck.rows[0].member_role;
+    const role = permissionCheck.rows[0].member_permissions;
     if (!["admin", "owner"].includes(role)) {
       throw new Error("Only admins or owners can approve or decline members.");
     }
 
-    // ✅ Update the member status
+    console.log(newStatus, memberId, repoId);
+
     const updateRes = await client.query(
       `
       UPDATE repo_members
-      SET status = $1, updated_at = NOW()
-      WHERE id = $2 AND repo = $3
+      SET status = $1
+      WHERE user_id = $2 AND repo = $3
       RETURNING *;
       `,
       [newStatus, memberId, repoId]
