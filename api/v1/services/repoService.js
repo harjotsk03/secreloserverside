@@ -59,14 +59,19 @@ async function createRepoWithDefaults({
 async function getUserRepos(userId) {
   const query = `
     SELECT
-    r.*,
-    -- Count of members
-    (SELECT COUNT(*) 
-    FROM repo_members rm 
-    WHERE rm.repo = r.id) AS member_count
-  FROM repos r
-  INNER JOIN repo_members rm_user ON rm_user.repo = r.id
-  WHERE rm_user.user_id = $1
+  r.*,
+  -- Count of members
+  (SELECT COUNT(*) 
+   FROM repo_members rm 
+   WHERE rm.repo = r.id) AS member_count,
+  -- Count of secrets
+  (SELECT COUNT(*) 
+   FROM secrets s
+   WHERE s.repo_id = r.id) AS secret_count
+FROM repos r
+INNER JOIN repo_members rm_user ON rm_user.repo = r.id
+WHERE rm_user.user_id = $1
+
   `;
 
   const result = await pool.query(query, [userId]);
