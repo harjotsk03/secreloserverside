@@ -100,7 +100,57 @@ async function deleteSecretController(req, res) {
   }
 }
 
+async function addUserSecretsController(req, res) {
+  try {
+    const { secret_id, encrypted_keys } = req.body;
+
+    if (
+      !secret_id ||
+      !Array.isArray(encrypted_keys) ||
+      encrypted_keys.length === 0
+    ) {
+      return res.status(400).json({ error: "Missing or invalid fields." });
+    }
+
+    const userSecretRows = [];
+
+    // Loop through and add each new user_secret entry
+    for (const entry of encrypted_keys) {
+      const {
+        user_id: target_user_id,
+        encrypted_key,
+        nonce,
+        sender_public_key,
+      } = entry;
+
+      if (!target_user_id || !encrypted_key || !nonce || !sender_public_key) {
+        console.warn("Skipping invalid entry:", entry);
+        continue; // skip incomplete entries
+      }
+
+      const userSecret = await createUserSecret({
+        secret_id,
+        user_id: target_user_id,
+        encrypted_secret_key: encrypted_key,
+        nonce,
+        sender_public_key,
+      });
+
+      userSecretRows.push(userSecret);
+    }
+
+    res.status(201).json({
+      message: "User secrets added successfully.",
+      user_secrets: userSecretRows,
+    });
+  } catch (error) {
+    console.error("❌ Error adding user secrets:", error);
+    res.status(500).json({ error: "Failed to add user secrets." });
+  }
+}
+
 module.exports = {
   createSecretController,
   deleteSecretController,
+  addUserSecretsController,
 };

@@ -73,7 +73,7 @@ async function getUserRepos(userId) {
   return result.rows;
 }
 
-async function getRepoDetails(repoId) {
+async function getRepoDetails(repoId, userId) {
   // 1. Fetch the repo info
   const repoQuery = `
     SELECT *
@@ -84,22 +84,37 @@ async function getRepoDetails(repoId) {
   const repo = repoResult.rows[0];
 
   if (!repo) {
-    throw new Error("Repo not found");
+    const err = new Error("Repository not found");
+    err.statusCode = 404;
+    throw err;
   }
 
+  // 2. Fetch all members of the repo + include user public keys
   const membersQuery = `
-  SELECT
-    rm.*,
-    u.full_name,
-    u.email
-FROM repo_members rm
-INNER JOIN users u ON u.id = rm.user_id
-WHERE rm.repo = $1
-`;
+    SELECT
+      rm.*,
+      u.full_name,
+      u.email,
+      uk.public_key
+    FROM repo_members rm
+    INNER JOIN users u ON u.id = rm.user_id
+    LEFT JOIN user_keys uk ON uk.user_id = u.id
+    WHERE rm.repo = $1
+  `;
   const membersResult = await pool.query(membersQuery, [repoId]);
   const members = membersResult.rows;
 
-  // Return 3 separate JSON objects
+  // 3. Authorization check — ensure current user is a member
+  const isMember = members.some((member) => member.user_id === userId);
+  if (!isMember) {
+    const err = new Error(
+      "Access denied: You are not a member of this repository."
+    );
+    err.statusCode = 403;
+    throw err;
+  }
+
+  // 4. Return repo and members with public keys included
   return {
     repo,
     members,
@@ -261,14 +276,14 @@ async function joinRepo(userId, repoInviteId, member_role) {
       [invite.repo_id, userId]
     );
     if (existingMemberRes.rows.length > 0) {
-      throw new Error("User is already a member of this repo");
+      throw new Error("You are already a member of this repo.");
     }
 
     // 3️⃣ Add to repo_members
     const memberRes = await client.query(
       `
       INSERT INTO repo_members (repo, user_id, member_role, member_permissions, status)
-      VALUES ($1, $2, $3, $4, 'active')
+      VALUES ($1, $2, $3, $4, 'pending')
       RETURNING *;
       `,
       [invite.repo_id, userId, member_role, invite.member_permissions || "read"]
@@ -285,7 +300,7 @@ async function joinRepo(userId, repoInviteId, member_role) {
 
     return {
       success: true,
-      message: "Joined repo successfully",
+      message: "Invitation accepted, pending approval from admin.",
       member,
     };
   } catch (error) {
@@ -344,6 +359,71 @@ async function getRepoSecrets(repoId, userId) {
   return result.rows;
 }
 
+async function updateRepoMemberStatus({
+  memberId,
+  repoId,
+  newStatus,
+  adminId,
+}) {
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    // ✅ Check that updater is an admin or owner
+    const permissionCheck = await client.query(
+      `
+      SELECT member_role, member_permissions
+      FROM repo_members
+      WHERE repo = $1 AND user_id = $2 AND status = 'active'
+      `,
+      [repoId, adminId]
+    );
+
+    if (permissionCheck.rows.length === 0) {
+      throw new Error(
+        "Unauthorized: You are not an active member of this repo."
+      );
+    }
+
+    const role = permissionCheck.rows[0].member_role;
+    if (!["admin", "owner"].includes(role)) {
+      throw new Error("Only admins or owners can approve or decline members.");
+    }
+
+    // ✅ Update the member status
+    const updateRes = await client.query(
+      `
+      UPDATE repo_members
+      SET status = $1, updated_at = NOW()
+      WHERE id = $2 AND repo = $3
+      RETURNING *;
+      `,
+      [newStatus, memberId, repoId]
+    );
+
+    if (updateRes.rows.length === 0) {
+      throw new Error("Member not found or already processed.");
+    }
+
+    await client.query("COMMIT");
+
+    return {
+      success: true,
+      message:
+        newStatus === "active"
+          ? "Member approved successfully."
+          : "Member declined successfully.",
+      member: updateRes.rows[0],
+    };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    console.error("❌ Error updating member status:", error);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
 
 module.exports = {
   createRepoWithDefaults,
@@ -356,4 +436,5 @@ module.exports = {
   joinRepo,
   getRepoUserKeys,
   getRepoSecrets,
+  updateRepoMemberStatus,
 };
