@@ -3,7 +3,6 @@ const {
   createRepo,
   fetchUserRepos,
   fetchRepoDetails,
-  fetchRepoDetailsJoin,
   createRepoInviteController,
   fetchUserRepoInvites,
   fetchRepoInvite,
@@ -12,6 +11,7 @@ const {
   fetchRepoSecrets,
   approveRepoMemberController,
   declineRepoMemberController,
+  updateMemberController,
 } = require("../controllers/repoController");
 const router = express.Router();
 const { authenticateJWT } = require("../../../middlewares/authMiddleware");
@@ -33,6 +33,11 @@ router.post(
   "/decline/:memberId/:repoId",
   authenticateJWT,
   declineRepoMemberController
+);
+router.put(
+  "/updateUserPermissions/:memberId/:repoId",
+  authenticateJWT,
+  updateMemberController
 );
 router.get("/:id", authenticateJWT, fetchRepoDetails);
 

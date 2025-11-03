@@ -426,6 +426,108 @@ async function updateRepoMemberStatus({
   }
 }
 
+async function updateMember({ memberId, repoId, permission, role, adminId }) {
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    // 1️⃣ Get current user role/permissions
+    const userRes = await client.query(
+      `SELECT member_role, member_permissions FROM repo_members WHERE repo = $1 AND user_id = $2 AND status = 'active'`,
+      [repoId, adminId]
+    );
+
+    if (!userRes.rows.length) {
+      const err = new Error(
+        "Unauthorized: You are not an active member of this repo."
+      );
+      err.statusCode = 403;
+      throw err;
+    }
+
+    const currentUserRole = userRes.rows[0].member_permissions; // 'owner', 'admin', 'read'
+    if (!["owner", "admin"].includes(currentUserRole)) {
+      const err = new Error("Only admins or owners can update members.");
+      err.statusCode = 403;
+      throw err;
+    }
+
+    // 2️⃣ Fetch target member
+    const targetRes = await client.query(
+      `SELECT member_permissions FROM repo_members WHERE user_id = $1 AND repo = $2`,
+      [memberId, repoId]
+    );
+    if (!targetRes.rows.length) {
+      const err = new Error("Target member not found.");
+      err.statusCode = 404;
+      throw err;
+    }
+
+    const targetPermissions = targetRes.rows[0].member_permissions;
+
+    // 3️⃣ Permission rules
+    if (currentUserRole === "admin" && targetPermissions === "owner") {
+      const err = new Error("Admin cannot modify Owner members.");
+      err.statusCode = 403;
+      throw err;
+    }
+
+    if (currentUserRole !== "owner" && permission === "owner") {
+      const err = new Error("Only owner can assign Owner role.");
+      err.statusCode = 403;
+      throw err;
+    }
+
+    // 4️⃣ Nothing to update?
+    if (!permission && !role) {
+      const err = new Error("Nothing to update.");
+      err.statusCode = 400;
+      throw err;
+    }
+
+    // 5️⃣ Build update dynamically
+    const fields = [];
+    const values = [];
+    let idx = 1;
+
+    if (permission) {
+      fields.push(`member_permissions = $${idx++}`);
+      values.push(permission);
+    }
+
+    if (role) {
+      fields.push(`member_role = $${idx++}`);
+      values.push(role);
+    }
+
+    values.push(memberId, repoId);
+
+    const updateRes = await client.query(
+      `UPDATE repo_members SET ${fields.join(
+        ", "
+      )} WHERE user_id = $${idx++} AND repo = $${idx} RETURNING *`,
+      values
+    );
+
+    if (!updateRes.rows.length) {
+      const err = new Error("Failed to update member.");
+      err.statusCode = 500;
+      throw err;
+    }
+
+    await client.query("COMMIT");
+
+    return updateRes.rows[0];
+  } catch (error) {
+    await client.query("ROLLBACK");
+    console.error("❌ Error updating member:", error);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 module.exports = {
   createRepoWithDefaults,
   getUserRepos,
@@ -438,4 +540,5 @@ module.exports = {
   getRepoUserKeys,
   getRepoSecrets,
   updateRepoMemberStatus,
+  updateMember,
 };

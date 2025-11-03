@@ -11,6 +11,7 @@ const {
   getRepoSecrets,
   getPendingRepoMembers,
   updateRepoMemberStatus,
+  updateMember,
 } = require("../services/repoService");
 
 async function createRepo(req, res) {
@@ -295,6 +296,28 @@ async function declineRepoMemberController(req, res) {
   }
 }
 
+async function updateMemberController(req, res) {
+  try {
+    const { memberId, repoId } = req.params;
+    const adminId = req.user?.id;
+    const { permission, role } = req.body;
+
+    const updatedMember = await updateMember({
+      memberId,
+      repoId,
+      permission,
+      role,
+      adminId,
+    });
+
+    res.json({ success: true, message: "Member updated", data: updatedMember });
+  } catch (err) {
+    console.error("Error updating member:", err);
+    const statusCode = err.statusCode || 500;
+    res.status(statusCode).json({ success: false, error: err.message });
+  }
+}
+
 /* ------------------------------ EXPORTS ------------------------------ */
 module.exports = {
   createRepo,
@@ -310,4 +333,5 @@ module.exports = {
   fetchPendingRepoMembers,
   approveRepoMemberController,
   declineRepoMemberController,
+  updateMemberController,
 };
